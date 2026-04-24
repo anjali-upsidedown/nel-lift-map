@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEL LIFT Buildings Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; }
+
+    #header {
+      background: #1a3a4f;
+      color: white;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      z-index: 1000;
+      position: relative;
+    }
+    #header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+    #header span { font-size: 12px; opacity: 0.7; }
+
+    #app { display: flex; height: calc(100vh - 50px); }
+
+    #sidebar {
+      width: 300px;
+      min-width: 300px;
+      background: white;
+      overflow-y: auto;
+      box-shadow: 2px 0 8px rgba(0,0,0,0.08);
+      z-index: 500;
+    }
+
+    .sidebar-section {
+      border-bottom: 1px solid #eee;
+    }
+    .sidebar-section-header {
+      padding: 12px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #666;
+      background: #f8f9fa;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+    .sidebar-section-header:hover { background: #eef0f3; }
+    .toggle-icon { font-size: 10px; transition: transform 0.2s; }
+    .collapsed .toggle-icon { transform: rotate(-90deg); }
+    .section-content { padding: 8px 0; }
+    .section-content.hidden { display: none; }
+
+    .building-item {
+      padding: 9px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: all 0.15s;
+    }
+    .building-item:hover { background: #f0f7ff; border-left-color: #2196f3; }
+    .building-item.active { background: #e3f2fd; border-left-color: #1565c0; }
+    .building-name { font-size: 13px; font-weight: 600; color: #1a3a4f; }
+    .building-meta { font-size: 11px; color: #888; margin-top: 2px; }
+
+    .borough-label {
+      padding: 6px 16px 2px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #aaa;
+      letter-spacing: 0.6px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 16px;
+      font-size: 12px;
+      color: #444;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .legend-line {
+      width: 24px;
+      height: 3px;
+      flex-shrink: 0;
+      border-radius: 2px;
+    }
+
+    .layer-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      font-size: 13px;
+      color: #333;
+    }
+    .layer-toggle input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
+
+    #map { flex: 1; }
+
+    /* Custom popup styles */
+    .custom-popup .leaflet-popup-content-wrapper {
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      padding: 0;
+      overflow: hidden;
+    }
+    .custom-popup .leaflet-popup-content { margin: 0; width: 330px !important; }
+    .popup-header {
+      background: #1a3a4f;
+      color: white;
+      padding: 12px 14px;
+    }
+    .popup-ref { font-size: 10px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px; }
+    .popup-title { font-size: 14px; font-weight: 700; margin-top: 2px; line-height: 1.3; }
+    .popup-body { padding: 12px 14px; }
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      font-size: 12px;
+      padding: 4px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .popup-row:last-child { border-bottom: none; }
+    .popup-label { color: #888; flex-shrink: 0; margin-right: 8px; }
+    .popup-value { font-weight: 600; color: #1a3a4f; text-align: right; }
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .status-live { background: #e8f5e9; color: #2e7d32; }
+    .status-dev { background: #fff3e0; color: #e65100; }
+    .status-plan { background: #fce4ec; color: #880e4f; }
+
+    /* Neighbourhood tooltip */
+    .neighbourhood-tooltip {
+      background: rgba(26,58,79,0.86);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 7px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.16);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    /* Add boundary button */
+    #add-boundary-btn {
+      margin: 10px 16px;
+      padding: 8px 12px;
+      background: #e3f2fd;
+      border: 1px dashed #90caf9;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #1565c0;
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.15s;
+    }
+    #add-boundary-btn:hover { background: #bbdefb; }
+
+    .geojson-note {
+      font-size: 11px;
+      color: #999;
+      padding: 0 16px 10px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <h1>NEL LIFT Buildings — Neighbourhood Map</h1>
+  <span>23 CHP Buildings · 7 Boroughs · Jan 2026 Boundaries</span>
+</div>
+
+<div id="app">
+  <div id="sidebar">
+
+    <!-- Layers -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-header" onclick="toggleSection(this)">
+        Layers <span class="toggle-icon">▼</span>
+      </div>
+      <div class="section-content">
+        <label class="layer-toggle">
+          <input type="checkbox" id="toggle-buildings" checked onchange="toggleLayer('buildings', this.checked)">
+          LIFT Buildings (23)
+        </label>
+        <label class="layer-toggle">
+          <input type="checkbox" id="toggle-neighbourhoods" checked onchange="toggleLayer('neighbourhoods', this.checked)">
+          Neighbourhood Boundaries
+        </label>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-header" onclick="toggleSection(this)">
+        Legend <span class="toggle-icon">▼</span>
+      </div>
+      <div class="section-content">
+        <div class="legend-item"><div class="legend-dot" style="background:#2e7d32"></div> Live</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#e65100"></div> In Development</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#880e4f"></div> In Planning</div>
+        <div style="height:8px"></div>
+        <div class="legend-item"><div class="legend-line" style="background:#FF6B35; opacity:0.6"></div> Hackney</div>
+        <div class="legend-item"><div class="legend-line" style="background:#4CAF50; opacity:0.6"></div> Waltham Forest</div>
+        <div class="legend-item"><div class="legend-line" style="background:#2196F3; opacity:0.6"></div> Redbridge</div>
+        <div class="legend-item"><div class="legend-line" style="background:#9C27B0; opacity:0.6"></div> Havering</div>
+        <div class="legend-item"><div class="legend-line" style="background:#F44336; opacity:0.6"></div> Barking & Dagenham</div>
+        <div class="legend-item"><div class="legend-line" style="background:#00BCD4; opacity:0.6"></div> Newham</div>
+        <div class="legend-item"><div class="legend-line" style="background:#FF9800; opacity:0.6"></div> Tower Hamlets</div>
+      </div>
+    </div>
+
+    <!-- Neighbourhood boundaries loader -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-header" onclick="toggleSection(this)">
+        Neighbourhood Boundaries <span class="toggle-icon">▼</span>
+      </div>
+      <div class="section-content">
+        <div class="geojson-note">
+          Fixed neighbourhood boundaries are pre-loaded. You can still load a replacement GeoJSON file here if boundaries change.
+        </div>
+        <div id="add-boundary-btn" onclick="document.getElementById('geojson-upload').click()">
+          📂 Load GeoJSON boundaries file
+        </div>
+        <input type="file" id="geojson-upload" accept=".geojson,.json" style="display:none" onchange="loadGeoJSON(event)">
+        <div id="boundary-status" class="geojson-note" style="color:#2e7d32; display:none"></div>
+      </div>
+    </div>
+
+    <!-- Buildings list -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-header" onclick="toggleSection(this)">
+        Buildings (23) <span class="toggle-icon">▼</span>
+      </div>
+      <div class="section-content" id="building-list"></div>
+    </div>
+
+  </div>
+
+  <div id="map"></div>
+</div>
+
+<script>
+// ============================================================
+// DATA — edit this to update buildings
+// ============================================================
+const BUILDINGS = [
+  // BARKING & DAGENHAM
+  { ref:"NEL3",  name:"Barking Child & Family Centre", borough:"Barking & Dagenham", status:"Live",        riba:"RIBA 2", archetype:"Large NHC",       funding:"CHP PACE", lat:51.5390, lng:0.0795, note:"Population growth in town centre; converting historical dental void", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL25", name:"Marks Gate Health Centre",       borough:"Barking & Dagenham", status:"In Development", riba:"RIBA 0", archetype:"Small NHC",  funding:"CHP PACE", lat:51.5762, lng:0.1489, note:"Utilisation study underway by ARCHUS", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL26", name:"Porters Avenue Health Centre",   borough:"Barking & Dagenham", status:"In Development", riba:"RIBA 1", archetype:"Large NHC",  funding:"CHP PACE", lat:51.5557, lng:0.1213, note:"Renal dialysis satellite; 12-week CHP appraisal programme underway", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL39", name:"Chadwell Heath Health Centre",   borough:"Barking & Dagenham", status:"In Planning",    riba:"RIBA 0", archetype:"Large NHC",  funding:"CHP PACE", lat:51.5710, lng:0.1432, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL43", name:"Church Elm Lane Health Centre",  borough:"Barking & Dagenham", status:"In Planning",    riba:"RIBA 0", archetype:"Small NHC",  funding:"CHP PACE", lat:51.5442, lng:0.1538, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL44", name:"The Broad Street Clinic",        borough:"Barking & Dagenham", status:"In Planning",    riba:"RIBA 0", archetype:"Small NHC",  funding:"CHP PACE", lat:51.5494, lng:0.1458, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL49", name:"Thames View Health Centre",      borough:"Barking & Dagenham", status:"In Planning",    riba:"RIBA 0", archetype:"Large NHC",  funding:"CHP PACE", lat:51.5196, lng:0.1262, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+
+  // HAVERING
+  { ref:"NEL24", name:"Harold Hill Health Centre",       borough:"Havering", status:"In Development", riba:"RIBA 0", archetype:"Large NHC",  funding:"CHP PACE", lat:51.5928, lng:0.2260, note:"Utilisation study underway by ARCHUS", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL35", name:"The Nightingale Practice",        borough:"Havering", status:"In Planning",    riba:"RIBA 0", archetype:"GP Hub",    funding:"CHP PACE", lat:51.5760, lng:0.2170, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL40", name:"Cranham Health Centre",           borough:"Havering", status:"In Planning",    riba:"RIBA 0", archetype:"Small NHC", funding:"CHP PACE", lat:51.5618, lng:0.2598, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL41", name:"South Hornchurch Health Centre",  borough:"Havering", status:"In Planning",    riba:"RIBA 0", archetype:"Small NHC", funding:"CHP PACE", lat:51.5190, lng:0.2093, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+
+  // NEWHAM
+  { ref:"NEL21", name:"Vicarage Lane Health Centre",     borough:"Newham", status:"Live",        riba:"RIBA 2", archetype:"Large NHC",       funding:"CHP PACE", lat:51.5348, lng:0.0022, note:"ELFT moving from Romford Rd clinic; ICB staff decant", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL23", name:"Centre Manor Park",               borough:"Newham", status:"Live",        riba:"RIBA 2", archetype:"Large NHC",       funding:"CHP PACE", lat:51.5480, lng:0.0527, note:"Wave 1 NHC — Sunrise Hub; 12-week development programme underway", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL36", name:"East Ham Care Centre",            borough:"Newham", status:"In Planning", riba:"RIBA 0", archetype:"Extra Large NHC", funding:"CHP PACE", lat:51.5320, lng:0.0527, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL45", name:"The Boleyn Medical Centre",       borough:"Newham", status:"In Planning", riba:"RIBA 0", archetype:"GP Hub",          funding:"CHP PACE", lat:51.5338, lng:0.0389, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL48", name:"Comely Bank Clinic",              borough:"Newham", status:"In Planning", riba:"RIBA 0", archetype:"Small NHC",       funding:"CHP PACE", lat:51.5469, lng:0.0458, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+
+  // HACKNEY
+  { ref:"NEL37", name:"Hackney Ark",                    borough:"Hackney", status:"In Planning", riba:"RIBA 0", archetype:"Large NHC", funding:"CHP PACE", lat:51.5478, lng:-0.0602, note:"CHP PACE end-of-term reconfiguration; LBH and ELFT as partners", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL47", name:"Kenworthy Road Health Centre",   borough:"Hackney", status:"In Planning", riba:"RIBA 0", archetype:"Large NHC", funding:"CHP PACE", lat:51.5523, lng:-0.0578, note:"CHP PACE end-of-term reconfiguration; Barts, ELFT, Homerton", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+
+  // WALTHAM FOREST
+  { ref:"NEL42", name:"Wood Street Health Centre",      borough:"Waltham Forest", status:"In Planning", riba:"RIBA 0", archetype:"Large NHC", funding:"CHP PACE", lat:51.5843, lng:-0.0098, note:"CHP PACE end-of-term; Voluntary sector interest flagged", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+
+  // REDBRIDGE
+  { ref:"NEL34", name:"Hainault Health Centre",         borough:"Redbridge", status:"In Planning", riba:"RIBA 0", archetype:"Large NHC", funding:"CHP PACE", lat:51.6001, lng:0.1102, note:"CHP PACE end-of-term reconfiguration project", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+
+  // TOWER HAMLETS
+  { ref:"NEL38", name:"The Barkantine Health Centre",   borough:"Tower Hamlets", status:"In Planning", riba:"RIBA 0", archetype:"Extra Large NHC", funding:"CHP PACE", lat:51.4952, lng:-0.0219, note:"CHP PACE end-of-term reconfiguration; LBTH, Barts, ELFT", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL46", name:"Newby Place Health Centre",      borough:"Tower Hamlets", status:"In Planning", riba:"RIBA 0", archetype:"Small NHC",       funding:"CHP PACE", lat:51.5092, lng:-0.0152, note:"CHP PACE end-of-term reconfiguration; Barts, ELFT", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+  { ref:"NEL56", name:"Beaumont House",                 borough:"Tower Hamlets", status:"In Planning", riba:"RIBA 0", archetype:"Large NHC",       funding:"CHP PACE", lat:51.5152, lng:-0.0456, note:"Barts autism service relocation; aligned with TH neighbourhood strategy", services:"TBC", leaseStatus:"TBC", utilisation:"TBC", designRisk:"TBC", nhcArchetype:"Archetype 1 – Hub and spoke" },
+];
+
+// ============================================================
+// BOROUGH COLOURS
+// ============================================================
+const BOROUGH_COLOURS = {
+  "Hackney":              "#FF6B35",
+  "Waltham Forest":       "#4CAF50",
+  "Redbridge":            "#2196F3",
+  "Havering":             "#9C27B0",
+  "Barking & Dagenham":   "#F44336",
+  "Newham":               "#00BCD4",
+  "Tower Hamlets":        "#FF9800",
+};
+
+// ============================================================
+// NEIGHBOURHOOD DATA (names + populations)
+// Add your drawn GeoJSON to see coloured boundaries
+// ============================================================
+const NEIGHBOURHOODS = {
+  "Hackney": [
+    {name:"Springfield Park", pop:31923},
+    {name:"Woodberry Wetlands", pop:25821},
+    {name:"Shoreditch Park and City", pop:55904},
+    {name:"Hackney Marshes", pop:40745},
+    {name:"Clissold Park", pop:35922},
+    {name:"Well St Common", pop:33245},
+    {name:"London Fields", pop:38835},
+    {name:"Hackney Downs", pop:36217},
+  ],
+  "Waltham Forest": [
+    {name:"South (Leyton/Leytonstone)", pop:99600},
+    {name:"Central (Walthamstow)", pop:107500},
+    {name:"North (Chingford)", pop:72000},
+  ],
+  "Redbridge": [
+    {name:"Woodford and Wanstead"},
+    {name:"Cranbrook"},
+    {name:"Loxford"},
+    {name:"Seven Kings & New Cross Alliance"},
+    {name:"Fairlop"},
+  ],
+  "Havering": [
+    {name:"Liberty", pop:50592},
+    {name:"North", pop:91435},
+    {name:"Marshalls", pop:47638},
+    {name:"Crest", pop:40082},
+    {name:"South", pop:64627},
+  ],
+  "Barking & Dagenham": [
+    {name:"North"},
+    {name:"South"},
+    {name:"East"},
+    {name:"West"},
+  ],
+  "Newham": [
+    {name:"Plaistow", pop:42472},
+    {name:"Forest Gate", pop:44069},
+    {name:"Beckton and Royal Docks", pop:45860},
+    {name:"East Ham", pop:62262},
+    {name:"Manor Park", pop:62576},
+    {name:"Stratford and West Ham", pop:64593},
+    {name:"Custom House and Canning Town", pop:65791},
+    {name:"Green Street", pop:68942},
+  ],
+  "Tower Hamlets": [
+    {name:"PCN 1 – The One Network Alliance", pop:50053},
+    {name:"PCN 2 – East End Health", pop:38340},
+    {name:"PCN 9 – Tower Network", pop:87413},
+    {name:"PCN 5 – Bow Health", pop:35587},
+    {name:"PCN 6 – Mile End & Bromley by Bow", pop:62265},
+    {name:"PCN 7 – Poplar & Limehouse", pop:52434},
+    {name:"PCN 8 – Healthy Island Partnership", pop:66133},
+  ],
+};
+
+const DEFAULT_BOUNDARIES = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"neighbourhood": "East", "borough": "Barking & Dagenham", "ward_count": 4, "wards": "Alibon, Beam, Eastbrook & Rush Green, Village"}, "geometry": {"type": "Polygon", "coordinates": [[[0.159049531255042, 51.5120715343138], [0.158721674311475, 51.5121868019303], [0.143206847940588, 51.5153245714514], [0.141864531167574, 51.5156528094271], [0.141819593023275, 51.5156637978947], [0.147796432989366, 51.5316174499921], [0.148235977697389, 51.5391404574833], [0.14792881438764, 51.5416188934147], [0.147432858493927, 51.551175249283], [0.160842636315805, 51.5515475345413], [0.154254911974835, 51.5660639460963], [0.154363765796302, 51.5661131534935], [0.161893735700278, 51.5616168728879], [0.185180463309676, 51.5655130817138], [0.182665768712343, 51.5612427068561], [0.190169028841709, 51.5527208608335], [0.18601364212704, 51.5475359213298], [0.173882834430427, 51.5373884270147], [0.168696354883914, 51.5311908395653], [0.165962965775036, 51.5287933739113], [0.162282351387461, 51.5213710895432], [0.159049531255042, 51.5120715343138]]]}}, {"type": "Feature", "properties": {"neighbourhood": "North", "borough": "Barking & Dagenham", "ward_count": 4, "wards": "Chadwell Heath, Heath, Valence, Whalebone"}, "geometry": {"type": "Polygon", "coordinates": [[[0.146548715395145, 51.5567720222263], [0.123599662542091, 51.5512260220077], [0.127709428846262, 51.5566259764069], [0.12502855734482, 51.5643409784065], [0.129324285273829, 51.5665254437875], [0.129659209964429, 51.5681112009943], [0.130026134177711, 51.570730149641], [0.129191022343564, 51.5763123378864], [0.133567347777831, 51.5799536500334], [0.127759038931832, 51.5816363831113], [0.126386612488677, 51.5867252201384], [0.14193543321104, 51.5965591739444], [0.14820590165784, 51.5989684642457], [0.149879933900273, 51.5970116756214], [0.14856379433479, 51.580775011088], [0.148988109531544, 51.5731491297406], [0.146703647684621, 51.5687966333103], [0.154363765796302, 51.5661131534935], [0.154254911974835, 51.5660639460963], [0.160842636315805, 51.5515475345413], [0.147432858493927, 51.551175249283], [0.146548715395145, 51.5567720222263]]]}}, {"type": "Feature", "properties": {"neighbourhood": "South", "borough": "Barking & Dagenham", "ward_count": 4, "wards": "Barking Riverside, Eastbury, Goresbrook, Thames View"}, "geometry": {"type": "Polygon", "coordinates": [[[0.109074895650993, 51.5142500204737], [0.100509379900435, 51.5145693097708], [0.0977882718338274, 51.5159064461463], [0.0975900590798886, 51.5160038410112], [0.0969273504494541, 51.5163294690499], [0.0926345059089598, 51.5256748543809], [0.0804919309719636, 51.5276302012431], [0.0804614655733338, 51.5276484384799], [0.100666829178681, 51.5314720346014], [0.0894008906888128, 51.5350869595174], [0.0836841632168591, 51.5379233705886], [0.0935856382532796, 51.5376977353382], [0.105673759984734, 51.5386568063314], [0.122036772948195, 51.5398734138137], [0.127654618714884, 51.5403114714502], [0.14792881438764, 51.5416188934147], [0.148235977697389, 51.5391404574833], [0.147796432989366, 51.5316174499921], [0.141819593023275, 51.5156637978947], [0.126345975161068, 51.5194462649611], [0.109074895650993, 51.5142500204737]]]}}, {"type": "Feature", "properties": {"neighbourhood": "West", "borough": "Barking & Dagenham", "ward_count": 7, "wards": "Abbey, Becontree, Gascoigne, Longbridge, Mayesbrook, Northbury, Parsloes"}, "geometry": {"type": "Polygon", "coordinates": [[[0.0725769776729165, 51.5307512385752], [0.0717562377648518, 51.5328974464873], [0.0687713626833771, 51.5362069922352], [0.0683036990858661, 51.5442534217457], [0.0683616946338665, 51.5443903891844], [0.0800638961227347, 51.5447723549261], [0.0885001748522584, 51.547741649362], [0.0926082637843222, 51.5496496995683], [0.0935197644735265, 51.5458578934501], [0.106131546667101, 51.5509449124415], [0.107456041875476, 51.5520023127018], [0.108318691080143, 51.5521568486506], [0.11327287260786, 51.5572667540348], [0.120491599554835, 51.5585734665865], [0.119051087716779, 51.5630518210245], [0.12502855734482, 51.5643409784065], [0.127709428846262, 51.5566259764069], [0.123599662542091, 51.5512260220077], [0.146548715395145, 51.5567720222263], [0.147432858493927, 51.551175249283], [0.14792881438764, 51.5416188934147], [0.127654618714884, 51.5403114714502], [0.122036772948195, 51.5398734138137], [0.105673759984734, 51.5386568063314], [0.0935856382532796, 51.5376977353382], [0.0836841632168591, 51.5379233705886], [0.0894008906888128, 51.5350869595174], [0.100666829178681, 51.5314720346014], [0.0804614655733338, 51.5276484384799], [0.0725769776729165, 51.5307512385752]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Clissold Park", "borough": "Hackney", "ward_count": 2, "wards": "Clissold, Stoke Newington"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.0793990012001615, 51.5516726911204], [-0.0903561415772903, 51.5541514256607], [-0.090396922359362, 51.5575741741988], [-0.0917168676312077, 51.5602014858924], [-0.092435360054862, 51.5639164583355], [-0.0917719742061208, 51.5640828513185], [-0.084707353990364, 51.565847953176], [-0.0730810546601441, 51.5653938418353], [-0.0715986588488782, 51.5628488169606], [-0.0681258654493313, 51.555589382228], [-0.0792036019809902, 51.5551357378586], [-0.0793990012001615, 51.5516726911204]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Hackney Downs", "borough": "Hackney", "ward_count": 2, "wards": "Hackney Downs, King's Park"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[-0.0171740512189124, 51.5516758944393], [-0.040970474373793, 51.5487353422917], [-0.0440393790467671, 51.5520113390977], [-0.0451297085977058, 51.5617899453013], [-0.0300395889044704, 51.5613589106994], [-0.0171740512189124, 51.5516758944393]]], [[[-0.0529253296638644, 51.5527849257374], [-0.0560093856792051, 51.5521742499604], [-0.0639184711427403, 51.551903982991], [-0.0681258654493313, 51.555589382228], [-0.0715986588488782, 51.5628488169606], [-0.0581532404509935, 51.5630153324369], [-0.0573366355644722, 51.5618291375596], [-0.0529253296638644, 51.5527849257374]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Hackney Marshes", "borough": "Hackney", "ward_count": 4, "wards": "Hackney Wick, Homerton, Lea Bridge, Victoria"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.0528564510841317, 51.534938715867], [-0.0573019079744903, 51.5344144403849], [-0.0552544831701937, 51.5422328818421], [-0.0553620300232874, 51.543635684135], [-0.05128760203843, 51.5473224863403], [-0.0560093856792051, 51.5521742499604], [-0.0529253296638644, 51.5527849257374], [-0.0573366355644722, 51.5618291375596], [-0.0511470697400311, 51.5677302063412], [-0.0511449586418684, 51.5677293943477], [-0.0451297085977058, 51.5617899453013], [-0.0440393790467671, 51.5520113390977], [-0.040970474373793, 51.5487353422917], [-0.0171740512189124, 51.5516758944393], [-0.0171743352515583, 51.5515772837198], [-0.016549676137034, 51.543329866783], [-0.0289910688237788, 51.5422729755855], [-0.0331911146315964, 51.5446857163683], [-0.0374213185800631, 51.5412814848204], [-0.0407379137152159, 51.5381186562258], [-0.0528564510841317, 51.534938715867]]]}}, {"type": "Feature", "properties": {"neighbourhood": "London Fields", "borough": "Hackney", "ward_count": 3, "wards": "Dalston, London Fields, Shacklewell"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.0552544831701937, 51.5422328818421], [-0.0573019079744903, 51.5344144403849], [-0.0624344459546157, 51.5355324975372], [-0.0657283325512948, 51.5388469636264], [-0.0767151252810623, 51.5390215912902], [-0.0760619709853172, 51.5441482633282], [-0.0766852527790431, 51.5460865945842], [-0.0776773911258274, 51.5494830091827], [-0.0793990012001615, 51.5516726911204], [-0.0792036019809902, 51.5551357378586], [-0.0681258654493313, 51.555589382228], [-0.0639184711427403, 51.551903982991], [-0.0685066541480415, 51.5511613825598], [-0.0644915603374763, 51.5440691468336], [-0.0553620300232874, 51.543635684135], [-0.0552544831701937, 51.5422328818421]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Shoreditch Park and City", "borough": "Hackney", "ward_count": 3, "wards": "Haggerston, Hoxton East & Shoreditch, Hoxton West"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.076119965722006, 51.522368978201], [-0.0785291057043016, 51.5215119179615], [-0.0852326450965759, 51.5203483962659], [-0.0850097924274718, 51.5262376352971], [-0.091481256765629, 51.5282085153029], [-0.0970323369192637, 51.5330033394181], [-0.0931472868596807, 51.5343988062644], [-0.0896889912178029, 51.536043227346], [-0.0865633983715774, 51.5373022716387], [-0.0781532047111421, 51.5366513592932], [-0.0767151252810623, 51.5390215912902], [-0.0657283325512948, 51.5388469636264], [-0.0624344459546157, 51.5355324975372], [-0.0662534489513387, 51.531220072024], [-0.0757153095558964, 51.5283581942797], [-0.076119965722006, 51.522368978201]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Springfield Park", "borough": "Hackney", "ward_count": 3, "wards": "Cazenove, Springfield, Stamford Hill West"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.0715986588488782, 51.5628488169606], [-0.0730810546601441, 51.5653938418353], [-0.084707353990364, 51.565847953176], [-0.0917719742061208, 51.5640828513185], [-0.0877846474247927, 51.5695401583745], [-0.0797228053494725, 51.570530648581], [-0.0767823219237451, 51.5743213555761], [-0.0762426745972946, 51.5749351956731], [-0.0723920692476494, 51.5756334609508], [-0.0611585720665009, 51.5777860361975], [-0.0511470697400311, 51.5677302063412], [-0.0573366355644722, 51.5618291375596], [-0.0581532404509935, 51.5630153324369], [-0.0715986588488782, 51.5628488169606]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Well St Common", "borough": "Hackney", "ward_count": 2, "wards": "De Beauvoir, Hackney Central"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[-0.0760619709853172, 51.5441482633282], [-0.0767151252810623, 51.5390215912902], [-0.0781532047111421, 51.5366513592932], [-0.0865633983715774, 51.5373022716387], [-0.0865615248399922, 51.5373671654901], [-0.0837895244222328, 51.5465852346987], [-0.0766852527790431, 51.5460865945842], [-0.0760619709853172, 51.5441482633282]]], [[[-0.0644915603374763, 51.5440691468336], [-0.0685066541480415, 51.5511613825598], [-0.0639184711427403, 51.551903982991], [-0.0560093856792051, 51.5521742499604], [-0.05128760203843, 51.5473224863403], [-0.0553620300232874, 51.543635684135], [-0.0644915603374763, 51.5440691468336]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Woodberry Wetlands", "borough": "Hackney", "ward_count": 2, "wards": "Brownswood, Woodberry Down"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.0917168676312077, 51.5602014858924], [-0.0985857950207302, 51.560813933077], [-0.0995655128000316, 51.5615627978647], [-0.104373934561655, 51.5647666575849], [-0.104032178579348, 51.5649662454105], [-0.0980757578828272, 51.5691117380091], [-0.0976349831401733, 51.5736455908192], [-0.0856588290596378, 51.5750401010783], [-0.0762426745972946, 51.5749351956731], [-0.0767823219237451, 51.5743213555761], [-0.0797228053494725, 51.570530648581], [-0.0877846474247927, 51.5695401583745], [-0.0917719742061208, 51.5640828513185], [-0.092435360054862, 51.5639164583355], [-0.0917168676312077, 51.5602014858924]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Crest", "borough": "Havering", "ward_count": 4, "wards": "Harold Wood, St Alban's, St Andrew's, St Edward's"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[0.239513399201135, 51.5590734385575], [0.232811370034682, 51.5508737181537], [0.229726091589548, 51.5564994626546], [0.205508323586902, 51.5510681439913], [0.207831186746364, 51.5553087195347], [0.202507919430231, 51.5562689370907], [0.209681136532244, 51.5603073990589], [0.212971608311065, 51.5704398430323], [0.212990511535941, 51.570435307212], [0.233349106841068, 51.5625212648708], [0.239513399201135, 51.5590734385575]]], [[[0.18497984275897, 51.5680734582495], [0.178913034398244, 51.5736562112025], [0.174977255920135, 51.5727529983101], [0.173925066883846, 51.5785376809823], [0.164948251975376, 51.5817928934878], [0.172657620283713, 51.5864060101573], [0.178826328419524, 51.5800146334135], [0.199724242598662, 51.5865248078678], [0.20473856225868, 51.5814125412247], [0.192064241827515, 51.5774198906496], [0.201568296223689, 51.5743191781707], [0.197333745713537, 51.5693409729615], [0.18497984275897, 51.5680734582495]]], [[[0.269879114681079, 51.5924669289916], [0.287123868086035, 51.5727099885495], [0.248835202463538, 51.5787067906771], [0.231662110875173, 51.5832522456068], [0.212839833440574, 51.5927255688279], [0.230528146197554, 51.6002241700091], [0.236707818052883, 51.5998885471627], [0.263257699303371, 51.6091919944458], [0.253916398804966, 51.6019201221886], [0.260870024206464, 51.6003904695662], [0.269866485133475, 51.5995544498121], [0.269879114681079, 51.5924669289916]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Liberty", "borough": "Havering", "ward_count": 3, "wards": "Emerson Park, Squirrels Heath, Upminster"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[0.265347272043956, 51.5321502650611], [0.266638180028104, 51.5229558898014], [0.262307889224424, 51.5179304897632], [0.253834318187163, 51.5178858715831], [0.250852046826051, 51.5288186261786], [0.245837497776256, 51.5235161805957], [0.242855999994698, 51.5243924623009], [0.231005233024604, 51.5250285752108], [0.233635948022446, 51.5325948325343], [0.229784518836723, 51.5376088639835], [0.216379077974136, 51.538227246679], [0.217033143625907, 51.5421157991608], [0.232811370034682, 51.5508737181537], [0.239513399201135, 51.5590734385575], [0.260588289991984, 51.55922777991], [0.290201523969927, 51.5644971982514], [0.313035079940716, 51.565818131885], [0.315294829915934, 51.5578352939707], [0.327816067967104, 51.5509945685188], [0.333902598356895, 51.5424937022607], [0.331429400596117, 51.5400454601615], [0.322441491335513, 51.5405178524473], [0.265347272043956, 51.5321502650611]]], [[[0.245892310686651, 51.5670497998759], [0.240629397842671, 51.5686333298382], [0.233349106841068, 51.5625212648708], [0.212990511535941, 51.570435307212], [0.212971608311065, 51.5704398430323], [0.201568296223689, 51.5743191781707], [0.192064241827515, 51.5774198906496], [0.20473856225868, 51.5814125412247], [0.199724242598662, 51.5865248078678], [0.212839833440574, 51.5927255688279], [0.231662110875173, 51.5832522456068], [0.248835202463538, 51.5787067906771], [0.24904959154502, 51.5690231098878], [0.245892310686651, 51.5670497998759]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Marshalls", "borough": "Havering", "ward_count": 3, "wards": "Hylands & Harrow Lodge, Marshalls & Rise Park, Rush Green & Crowlands"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[0.209681136532244, 51.5603073990589], [0.202507919430231, 51.5562689370907], [0.190169028841709, 51.5527208608335], [0.182665768712343, 51.5612427068561], [0.185180463309676, 51.5655130817138], [0.161893735700278, 51.5616168728879], [0.154363765796302, 51.5661131534935], [0.146703647684621, 51.5687966333103], [0.148988109531544, 51.5731491297406], [0.14856379433479, 51.580775011088], [0.164948251975376, 51.5817928934878], [0.173925066883846, 51.5785376809823], [0.174977255920135, 51.5727529983101], [0.178913034398244, 51.5736562112025], [0.18497984275897, 51.5680734582495], [0.197333745713537, 51.5693409729615], [0.201568296223689, 51.5743191781707], [0.212971608311065, 51.5704398430323], [0.209681136532244, 51.5603073990589]]], [[[0.212839833440574, 51.5927255688279], [0.199724242598662, 51.5865248078678], [0.178826328419524, 51.5800146334135], [0.172657620283713, 51.5864060101573], [0.175545650964881, 51.5978392775318], [0.180474302037403, 51.6037551315407], [0.193595150190669, 51.60321062336], [0.193957726189106, 51.5951447864113], [0.212839833440574, 51.5927255688279]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "North", "borough": "Havering", "ward_count": 5, "wards": "Beam Park, Gooshays, Havering-atte-Bower, Heaton, Mawneys"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[0.162282351387461, 51.5213710895432], [0.165962965775036, 51.5287933739113], [0.168696354883914, 51.5311908395653], [0.179202903687783, 51.5281174506481], [0.177198083347362, 51.5245684615823], [0.185941742091718, 51.5261388414054], [0.196990208310419, 51.5233225922359], [0.17867770719157, 51.5146022341577], [0.162282351387461, 51.5213710895432]]], [[[0.164948251975376, 51.5817928934878], [0.14856379433479, 51.580775011088], [0.149879933900273, 51.5970116756214], [0.14820590165784, 51.5989684642457], [0.147540561512271, 51.6122233520457], [0.138184235471144, 51.6235453960564], [0.151073417666375, 51.6232470428744], [0.16890129781848, 51.6214201695658], [0.181238047261213, 51.6258265942297], [0.200311572516926, 51.6249357566968], [0.208496660961782, 51.6266876952223], [0.224087730411796, 51.6317377614501], [0.263257699303371, 51.6091919944458], [0.236707818052883, 51.5998885471627], [0.230528146197554, 51.6002241700091], [0.212839833440574, 51.5927255688279], [0.193957726189106, 51.5951447864113], [0.193595150190669, 51.60321062336], [0.180474302037403, 51.6037551315407], [0.175545650964881, 51.5978392775318], [0.172657620283713, 51.5864060101573], [0.164948251975376, 51.5817928934878]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "South", "borough": "Havering", "ward_count": 5, "wards": "Cranham, Elm Park, Hacton, Rainham & Wennington, South Hornchurch"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[0.244905836375926, 51.5187594749428], [0.23717600954358, 51.5193344334906], [0.241919319161816, 51.5079601268953], [0.226597286350539, 51.5065632427159], [0.229965349544136, 51.4993659187165], [0.214156929096117, 51.4960396098803], [0.211870088916148, 51.4899589554105], [0.210553951469516, 51.490243106395], [0.187684066854566, 51.4878588734338], [0.182035195733018, 51.4986273269182], [0.178574966651708, 51.5052038621519], [0.159207809614416, 51.5120158863305], [0.159049531255042, 51.5120715343138], [0.162282351387461, 51.5213710895432], [0.17867770719157, 51.5146022341577], [0.196990208310419, 51.5233225922359], [0.185941742091718, 51.5261388414054], [0.177198083347362, 51.5245684615823], [0.179202903687783, 51.5281174506481], [0.168696354883914, 51.5311908395653], [0.173882834430427, 51.5373884270147], [0.18601364212704, 51.5475359213298], [0.190169028841709, 51.5527208608335], [0.202507919430231, 51.5562689370907], [0.207831186746364, 51.5553087195347], [0.205508323586902, 51.5510681439913], [0.229726091589548, 51.5564994626546], [0.232811370034682, 51.5508737181537], [0.217033143625907, 51.5421157991608], [0.216379077974136, 51.538227246679], [0.229784518836723, 51.5376088639835], [0.233635948022446, 51.5325948325343], [0.231005233024604, 51.5250285752108], [0.242855999994698, 51.5243924623009], [0.240724594603274, 51.5212073864545], [0.244905836375926, 51.5187594749428]]], [[[0.239513399201135, 51.5590734385575], [0.233349106841068, 51.5625212648708], [0.240629397842671, 51.5686333298382], [0.245892310686651, 51.5670497998759], [0.24904959154502, 51.5690231098878], [0.248835202463538, 51.5787067906771], [0.287123868086035, 51.5727099885495], [0.290201523969927, 51.5644971982514], [0.260588289991984, 51.55922777991], [0.239513399201135, 51.5590734385575]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Beckton and Royal Docks", "borough": "Newham", "ward_count": 4, "wards": "Beckton, Custom House, Royal Albert, Royal Victoria"}, "geometry": {"type": "Polygon", "coordinates": [[[0.0773375470091592, 51.5051760299816], [0.0770639444988711, 51.5049102456392], [0.0709057431350203, 51.5006422860434], [0.0686613479588301, 51.4990865709587], [0.0391165482248049, 51.4985676936577], [0.0244415401970016, 51.4983071926065], [0.0190380042262118, 51.5015470646492], [0.0157449867445838, 51.5035211873419], [0.0134809968335669, 51.504878274849], [0.00942622622911539, 51.5078980414309], [0.00983571762270704, 51.5084290689515], [0.00598461516628719, 51.5101575393515], [0.0187297300849363, 51.5095749025389], [0.0217140799830249, 51.5137089506073], [0.017009297475979, 51.5171011394982], [0.0173428286744573, 51.5171412488178], [0.0233663162260955, 51.517307877883], [0.041307715239221, 51.5196938824162], [0.0413371007665332, 51.519700599083], [0.05792170318738, 51.5201255997807], [0.0804919309719636, 51.5276302012431], [0.0926345059089598, 51.5256748543809], [0.0969273504494541, 51.5163294690499], [0.0960699880794032, 51.5167507295967], [0.0967901178299367, 51.5151511987068], [0.0845804631805836, 51.512210528955], [0.0790274188107048, 51.5068175408926], [0.0773375470091592, 51.5051760299816]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Custom House and Canning Town", "borough": "Newham", "ward_count": 2, "wards": "Canning Town North, Canning Town South"}, "geometry": {"type": "Polygon", "coordinates": [[[0.00598461516628719, 51.5101575393515], [0.00706056277099639, 51.5143010575286], [0.00223557999420833, 51.5110055135048], [0.00412442803253886, 51.5146478273212], [0.00412209763057088, 51.5146596086371], [-0.00221632334419206, 51.5179991218039], [-0.00566384021120656, 51.516764145692], [-0.0080903401132746, 51.5238353110294], [-0.00781941561658298, 51.5253226555423], [-0.00776274195722487, 51.5253940846822], [0.00476416583919174, 51.5282996520043], [0.011965470254275, 51.5300017973036], [0.012434195143051, 51.519628060019], [0.0173428286744573, 51.5171412488178], [0.017009297475979, 51.5171011394982], [0.0217140799830249, 51.5137089506073], [0.0187297300849363, 51.5095749025389], [0.00598461516628719, 51.5101575393515]]]}}, {"type": "Feature", "properties": {"neighbourhood": "East Ham", "borough": "Newham", "ward_count": 2, "wards": "East Ham, East Ham South"}, "geometry": {"type": "Polygon", "coordinates": [[[0.0804919309719636, 51.5276302012431], [0.05792170318738, 51.5201255997807], [0.0413371007665332, 51.519700599083], [0.041307715239221, 51.5196938824162], [0.039432841798739, 51.5254491737103], [0.0486919043730077, 51.5268851111224], [0.0442096618225676, 51.5374016141699], [0.0536225867623331, 51.539643791351], [0.0593809308721196, 51.528738449954], [0.0725769776729165, 51.5307512385752], [0.0804614655733338, 51.5276484384799], [0.0804919309719636, 51.5276302012431]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Forest Gate", "borough": "Newham", "ward_count": 3, "wards": "Forest Gate North, Forest Gate South, Maryland"}, "geometry": {"type": "Polygon", "coordinates": [[[0.0311762184050523, 51.5469319776752], [0.0212190529046257, 51.5413729935069], [0.0105366039489166, 51.5409615049245], [0.0083967477907156, 51.5446064198471], [-0.000323281793077482, 51.5439073168057], [-0.00416104016302288, 51.5510339048465], [-0.000155843808584557, 51.5517314704798], [0.00956876687641141, 51.5512469832366], [0.0146412934547694, 51.5549643727134], [0.0162807966979312, 51.5531927103866], [0.0204742041657707, 51.5561281250745], [0.0354303631454606, 51.5552584723179], [0.036007481284586, 51.5510205451715], [0.0438907490988524, 51.5493501719181], [0.0386774814295495, 51.5480717474391], [0.0311762184050523, 51.5469319776752]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Green Street", "borough": "Newham", "ward_count": 4, "wards": "Boleyn, Green Street East, Green Street West, Plashet"}, "geometry": {"type": "Polygon", "coordinates": [[[0.03782995452393, 51.530220768026], [0.0354175616329916, 51.535383269325], [0.0269802893136911, 51.533441828156], [0.0274718886453214, 51.5367175286592], [0.0221183264135467, 51.5368368510087], [0.0212190529046257, 51.5413729935069], [0.0311762184050523, 51.5469319776752], [0.0386774814295495, 51.5480717474391], [0.0427122482132161, 51.5423402467779], [0.0498386569420581, 51.5436429295104], [0.0484115499824804, 51.5483477107184], [0.0571734502122165, 51.5464115511145], [0.0570136403240658, 51.5409161526119], [0.0536225867623331, 51.539643791351], [0.0442096618225676, 51.5374016141699], [0.0486919043730077, 51.5268851111224], [0.039432841798739, 51.5254491737103], [0.03782995452393, 51.530220768026]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Manor Park", "borough": "Newham", "ward_count": 3, "wards": "Little Ilford, Manor Park, Wall End"}, "geometry": {"type": "Polygon", "coordinates": [[[0.0717562377648518, 51.5328974464873], [0.0725769776729165, 51.5307512385752], [0.0593809308721196, 51.528738449954], [0.0536225867623331, 51.539643791351], [0.0570136403240658, 51.5409161526119], [0.0571734502122165, 51.5464115511145], [0.0484115499824804, 51.5483477107184], [0.0498386569420581, 51.5436429295104], [0.0427122482132161, 51.5423402467779], [0.0386774814295495, 51.5480717474391], [0.0438907490988524, 51.5493501719181], [0.036007481284586, 51.5510205451715], [0.0354303631454606, 51.5552584723179], [0.0462726110117307, 51.5548299397683], [0.0443396093396799, 51.5575911454918], [0.0420292779474462, 51.5614920798708], [0.0503449924892256, 51.5640217703103], [0.0601507418451312, 51.5564070965971], [0.0636426301512285, 51.5572762598429], [0.0649450135997271, 51.5563952962051], [0.0683616946338665, 51.5443903891844], [0.0683036990858661, 51.5442534217457], [0.0687713626833771, 51.5362069922352], [0.0717562377648518, 51.5328974464873]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Plaistow", "borough": "Newham", "ward_count": 3, "wards": "Plaistow North, Plaistow South, Plaistow West & Canning Town East"}, "geometry": {"type": "Polygon", "coordinates": [[[0.041307715239221, 51.5196938824162], [0.0233663162260955, 51.517307877883], [0.0173428286744573, 51.5171412488178], [0.012434195143051, 51.519628060019], [0.011965470254275, 51.5300017973036], [0.0179503470527498, 51.5314052071124], [0.0185529609052632, 51.5369828421872], [0.0221183264135467, 51.5368368510087], [0.0274718886453214, 51.5367175286592], [0.0269802893136911, 51.533441828156], [0.0354175616329916, 51.535383269325], [0.03782995452393, 51.530220768026], [0.039432841798739, 51.5254491737103], [0.041307715239221, 51.5196938824162]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Stratford and West Ham", "borough": "Newham", "ward_count": 3, "wards": "Stratford, Stratford Olympic Park, West Ham"}, "geometry": {"type": "Polygon", "coordinates": [[[0.0185529609052632, 51.5369828421872], [0.0179503470527498, 51.5314052071124], [0.011965470254275, 51.5300017973036], [0.00476416583919174, 51.5282996520043], [-0.00776274195722487, 51.5253940846822], [-0.0136822637916931, 51.5298465466927], [-0.0180112178111926, 51.5322223572861], [-0.0212678337033492, 51.537007401385], [-0.016549676137034, 51.543329866783], [-0.0171743352515583, 51.5515772837198], [-0.0108423820256557, 51.5526236900054], [-0.00868625229743246, 51.549922890254], [-0.00416104016302288, 51.5510339048465], [-0.000323281793077482, 51.5439073168057], [0.0083967477907156, 51.5446064198471], [0.0105366039489166, 51.5409615049245], [0.0212190529046257, 51.5413729935069], [0.0221183264135467, 51.5368368510087], [0.0185529609052632, 51.5369828421872]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Cranbrook", "borough": "Redbridge", "ward_count": 5, "wards": "Bridge, Clementswood, Cranbrook, Ilford Town, Valentines"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[0.0714361462575565, 51.5564533191455], [0.0649450135997271, 51.5563952962051], [0.0636426301512285, 51.5572762598429], [0.0632792684918553, 51.5575934436419], [0.0569051599455127, 51.5625381186548], [0.0442844113306705, 51.5759393214756], [0.0570464745802242, 51.5764428436955], [0.0675054851415484, 51.5763129485539], [0.0745395903446022, 51.5751042497447], [0.0793762006798521, 51.5742604588935], [0.0768058209517908, 51.5712827001304], [0.0813485882706133, 51.5665412292411], [0.0918974853240497, 51.5634192995797], [0.0937433835608484, 51.5598171156547], [0.085472244447461, 51.5589959661592], [0.0862087519798825, 51.5506871493868], [0.0751906608832439, 51.5495894237255], [0.0714361462575565, 51.5564533191455]]], [[[0.0565666722244515, 51.6010732590101], [0.0538915691539038, 51.5983998617813], [0.0455590415625625, 51.5997611640234], [0.0322254492703588, 51.603615816645], [0.0407878432974229, 51.6157288187761], [0.0536727737913095, 51.6182790977801], [0.0479561835430442, 51.6133026345828], [0.0586553341463497, 51.609101742204], [0.0728118625758041, 51.6046818989335], [0.0762068327620268, 51.5971134137282], [0.0565666722244515, 51.6010732590101]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Fairlop", "borough": "Redbridge", "ward_count": 4, "wards": "Clayhall, Fairlop, Fullwell, Hainault"}, "geometry": {"type": "Polygon", "coordinates": [[[0.0570464745802242, 51.5764428436955], [0.0442844113306705, 51.5759393214756], [0.0398996187023529, 51.5841881184245], [0.0378045640987811, 51.5936604914569], [0.0376297894392398, 51.5939153378302], [0.0455590415625625, 51.5997611640234], [0.0538915691539038, 51.5983998617813], [0.0565666722244515, 51.6010732590101], [0.0762068327620268, 51.5971134137282], [0.0728118625758041, 51.6046818989335], [0.079369067593195, 51.6070384728995], [0.0888366104152503, 51.6048596976753], [0.0946532042398149, 51.6107907853818], [0.0922848679306965, 51.613574263713], [0.0980683911361371, 51.6154215805073], [0.103837892902431, 51.6125513646419], [0.116710192938793, 51.6169216490182], [0.119307301579151, 51.615368502629], [0.138184235471144, 51.6235453960564], [0.147540561512271, 51.6122233520457], [0.14820590165784, 51.5989684642457], [0.14193543321104, 51.5965591739444], [0.129112279539126, 51.6084798581702], [0.109523304646217, 51.6006587227722], [0.0910364137042984, 51.5954300662153], [0.0888186428668378, 51.5866538671033], [0.0808275662039038, 51.5880540246084], [0.0794986052450307, 51.5862034725256], [0.0732036773515446, 51.5889066699241], [0.0701084898871299, 51.5874756866885], [0.055197112766601, 51.5804932199383], [0.0570464745802242, 51.5764428436955]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Loxford", "borough": "Redbridge", "ward_count": 3, "wards": "Chadwell, Goodmayes, Loxford"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[0.0885001748522584, 51.547741649362], [0.0800638961227347, 51.5447723549261], [0.0683616946338665, 51.5443903891844], [0.0649450135997271, 51.5563952962051], [0.0714361462575565, 51.5564533191455], [0.0751906608832439, 51.5495894237255], [0.0862087519798825, 51.5506871493868], [0.0885001748522584, 51.547741649362]]], [[[0.12502855734482, 51.5643409784065], [0.119051087716779, 51.5630518210245], [0.120491599554835, 51.5585734665865], [0.11327287260786, 51.5572667540348], [0.108318691080143, 51.5521568486506], [0.107456041875476, 51.5520023127018], [0.109550729651716, 51.5607694269919], [0.0937433835608484, 51.5598171156547], [0.0918974853240497, 51.5634192995797], [0.0954155793319734, 51.5638051994623], [0.119127511516346, 51.5684313551177], [0.119256060617398, 51.5717878626451], [0.113275738040452, 51.5741213685771], [0.117542763063498, 51.5823700133435], [0.127759038931832, 51.5816363831113], [0.133567347777831, 51.5799536500334], [0.129191022343564, 51.5763123378864], [0.130026134177711, 51.570730149641], [0.129659209964429, 51.5681112009943], [0.129324285273829, 51.5665254437875], [0.12502855734482, 51.5643409784065]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Seven Kings & New Cross Alliance", "borough": "Redbridge", "ward_count": 5, "wards": "Aldborough, Barkingside, Mayfield, Newbury, Seven Kings"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[0.0935197644735265, 51.5458578934501], [0.0926082637843222, 51.5496496995683], [0.0885001748522584, 51.547741649362], [0.0862087519798825, 51.5506871493868], [0.085472244447461, 51.5589959661592], [0.0937433835608484, 51.5598171156547], [0.109550729651716, 51.5607694269919], [0.107456041875476, 51.5520023127018], [0.106131546667101, 51.5509449124415], [0.0935197644735265, 51.5458578934501]]], [[[0.0813485882706133, 51.5665412292411], [0.0768058209517908, 51.5712827001304], [0.0793762006798521, 51.5742604588935], [0.0745395903446022, 51.5751042497447], [0.0675054851415484, 51.5763129485539], [0.0570464745802242, 51.5764428436955], [0.055197112766601, 51.5804932199383], [0.0701084898871299, 51.5874756866885], [0.0732036773515446, 51.5889066699241], [0.0794986052450307, 51.5862034725256], [0.0808275662039038, 51.5880540246084], [0.0888186428668378, 51.5866538671033], [0.0910364137042984, 51.5954300662153], [0.109523304646217, 51.6006587227722], [0.129112279539126, 51.6084798581702], [0.14193543321104, 51.5965591739444], [0.126386612488677, 51.5867252201384], [0.127759038931832, 51.5816363831113], [0.117542763063498, 51.5823700133435], [0.113275738040452, 51.5741213685771], [0.119256060617398, 51.5717878626451], [0.119127511516346, 51.5684313551177], [0.0954155793319734, 51.5638051994623], [0.0918974853240497, 51.5634192995797], [0.0813485882706133, 51.5665412292411]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Woodford and Wanstead", "borough": "Redbridge", "ward_count": 5, "wards": "Churchfields, Monkhams, South Woodford, Wanstead Park, Wanstead Village"}, "geometry": {"type": "Polygon", "coordinates": [[[0.0636426301512285, 51.5572762598429], [0.0601507418451312, 51.5564070965971], [0.0503449924892256, 51.5640217703103], [0.0420292779474462, 51.5614920798708], [0.0443396093396799, 51.5575911454918], [0.0462726110117307, 51.5548299397683], [0.0354303631454606, 51.5552584723179], [0.0204742041657707, 51.5561281250745], [0.014308954583771, 51.5635078782028], [0.0191310762333434, 51.5698548949449], [0.0164867288262751, 51.5728872338189], [0.0149354845145147, 51.5833577453248], [0.0129671463596429, 51.5869620327693], [0.0125456902701729, 51.5953571434838], [0.0125469358387258, 51.5953635058787], [0.0164189827493158, 51.6039305627401], [0.0195790134681853, 51.6076109417029], [0.021250445433346, 51.6123074583878], [0.00869444540428972, 51.6190699014527], [0.0145380924454833, 51.6188930894347], [0.0200877350284357, 51.6264287749617], [0.021819035344359, 51.6288327861104], [0.0407878432974229, 51.6157288187761], [0.0322254492703588, 51.603615816645], [0.0455590415625625, 51.5997611640234], [0.0376297894392398, 51.5939153378302], [0.0378045640987811, 51.5936604914569], [0.0398996187023529, 51.5841881184245], [0.0442844113306705, 51.5759393214756], [0.0569051599455127, 51.5625381186548], [0.0632792684918553, 51.5575934436419], [0.0636426301512285, 51.5572762598429]]]}}, {"type": "Feature", "properties": {"neighbourhood": "PCN 1 – The One Network Alliance", "borough": "Tower Hamlets", "ward_count": 4, "wards": "Spitalfields & Banglatown, Stepney Green, Weavers, Whitechapel"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.0604865061131403, 51.5094444257984], [-0.0745446293087759, 51.5099541982695], [-0.0730520769526355, 51.5118083252744], [-0.0740032846027966, 51.5144784652424], [-0.0768720421523466, 51.5166250763039], [-0.0785291057043016, 51.5215119179615], [-0.076119965722006, 51.522368978201], [-0.0757153095558964, 51.5283581942797], [-0.0662534489513387, 51.531220072024], [-0.0639912291329753, 51.5235795133191], [-0.0561783309427876, 51.5209646148638], [-0.0563504806561444, 51.5198335574931], [-0.0500128985354715, 51.5210699860445], [-0.0426850959256503, 51.5177592190215], [-0.0418205948534618, 51.5129498947967], [-0.0556964403630103, 51.5143452444187], [-0.0618835809077793, 51.514758846103], [-0.0604865061131403, 51.5094444257984]]]}}, {"type": "Feature", "properties": {"neighbourhood": "PCN 2 – East End Health", "borough": "Tower Hamlets", "ward_count": 2, "wards": "Bethnal Green East, Bethnal Green West"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.0500128985354715, 51.5210699860445], [-0.0563504806561444, 51.5198335574931], [-0.0561783309427876, 51.5209646148638], [-0.0639912291329753, 51.5235795133191], [-0.0662534489513387, 51.531220072024], [-0.0624344459546157, 51.5355324975372], [-0.0573019079744903, 51.5344144403849], [-0.0528564510841317, 51.534938715867], [-0.0490393631095416, 51.533654145972], [-0.0370382095409806, 51.5242483882287], [-0.0500128985354715, 51.5210699860445]]]}}, {"type": "Feature", "properties": {"neighbourhood": "PCN 5 – Bow Health", "borough": "Tower Hamlets", "ward_count": 3, "wards": "Bow West, Bromley North, Lansbury"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[-0.0209794837095952, 51.5108059985357], [-0.0244997126091207, 51.5137835262313], [-0.0216115686658594, 51.51657123087], [-0.0080903401132746, 51.5238353110294], [-0.00566384021120656, 51.516764145692], [-0.00221632334419206, 51.5179991218039], [0.00412209763057088, 51.5146596086371], [-0.0209794837095952, 51.5108059985357]]], [[[-0.023938744655182, 51.5231751518591], [-0.0301668167030409, 51.526099941476], [-0.0370382095409806, 51.5242483882287], [-0.0490393631095416, 51.533654145972], [-0.0528564510841317, 51.534938715867], [-0.0407379137152159, 51.5381186562258], [-0.0349336805339942, 51.5366274667133], [-0.0298770848699528, 51.5294044188513], [-0.0227921068748026, 51.5303751829207], [-0.0210107899170071, 51.5279297040512], [-0.0136822637916931, 51.5298465466927], [-0.00776274195722487, 51.5253940846822], [-0.00781941561658298, 51.5253226555423], [-0.023938744655182, 51.5231751518591]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "PCN 6 – Mile End & Bromley by Bow", "borough": "Tower Hamlets", "ward_count": 1, "wards": "Mile End"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.023938744655182, 51.5231751518591], [-0.027313657581791, 51.5207355455965], [-0.0216115686658594, 51.51657123087], [-0.0244997126091207, 51.5137835262313], [-0.0209794837095952, 51.5108059985357], [-0.0281061923329761, 51.5118720896158], [-0.0364699720187851, 51.5125969451019], [-0.0337584000279185, 51.5167610221869], [-0.0370382095409806, 51.5242483882287], [-0.0301668167030409, 51.526099941476], [-0.023938744655182, 51.5231751518591]]]}}, {"type": "Feature", "properties": {"neighbourhood": "PCN 7 – Poplar & Limehouse", "borough": "Tower Hamlets", "ward_count": 4, "wards": "Canary Wharf, Island Gardens, Limehouse, Poplar"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.00302449911028931, 51.4908752952604], [-0.0065000193329938, 51.4871241913737], [-0.0163816641307183, 51.4861488167725], [-0.0244033449161679, 51.4893742304862], [-0.0261924911944529, 51.4939160554184], [-0.0262117616628073, 51.4939649686835], [-0.0288667316290014, 51.5023620197961], [-0.0303712181709259, 51.5071860114172], [-0.0303754348860423, 51.507199531077], [-0.041881876537095, 51.5097198462545], [-0.0418953835703518, 51.5106003919663], [-0.038924331487091, 51.5126982392901], [-0.0364699720187851, 51.5125969451019], [-0.0281061923329761, 51.5118720896158], [-0.0209794837095952, 51.5108059985357], [0.00412209763057088, 51.5146596086371], [0.00412442803253886, 51.5146478273212], [0.00223557999420833, 51.5110055135048], [-0.0106443987539201, 51.5073485821298], [-0.0154326968025927, 51.5041401395706], [-0.0173279255127327, 51.4935155644022], [-0.00323674392972222, 51.4912711514299], [-0.00302449911028931, 51.4908752952604]]]}}, {"type": "Feature", "properties": {"neighbourhood": "PCN 8 – Healthy Island Partnership", "borough": "Tower Hamlets", "ward_count": 4, "wards": "Blackwall & Cubitt Town, Shadwell, St Dunstan's, St Katharine's & Wapping"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[0.00942622622911539, 51.5078980414309], [0.00837588793803076, 51.5086801902431], [0.00878385951469926, 51.5073176138539], [0.00755731380946194, 51.5073205015658], [-0.00204585615387899, 51.507342668644], [-0.00791528475568811, 51.5020081083794], [-0.00864106836119252, 51.5013483513626], [-0.00323674392972222, 51.4912711514299], [-0.0173279255127327, 51.4935155644022], [-0.0154326968025927, 51.5041401395706], [-0.0106443987539201, 51.5073485821298], [0.00223557999420833, 51.5110055135048], [0.00706056277099639, 51.5143010575286], [0.00598461516628719, 51.5101575393515], [0.00983571762270704, 51.5084290689515], [0.00942622622911539, 51.5078980414309]]], [[[-0.0597558804062452, 51.5028779748976], [-0.059775480605813, 51.5028703263341], [-0.0598090373301032, 51.502878854589], [-0.0787063478691949, 51.5076794506541], [-0.0745446293087759, 51.5099541982695], [-0.0604865061131403, 51.5094444257984], [-0.0618835809077793, 51.514758846103], [-0.0556964403630103, 51.5143452444187], [-0.0418205948534618, 51.5129498947967], [-0.0426850959256503, 51.5177592190215], [-0.0500128985354715, 51.5210699860445], [-0.0370382095409806, 51.5242483882287], [-0.0337584000279185, 51.5167610221869], [-0.0364699720187851, 51.5125969451019], [-0.038924331487091, 51.5126982392901], [-0.0418953835703518, 51.5106003919663], [-0.041881876537095, 51.5097198462545], [-0.0420983428656717, 51.5097665247412], [-0.0597558804062452, 51.5028779748976]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "PCN 9 – Tower Network", "borough": "Tower Hamlets", "ward_count": 2, "wards": "Bow East, Bromley South"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[-0.0216115686658594, 51.51657123087], [-0.027313657581791, 51.5207355455965], [-0.023938744655182, 51.5231751518591], [-0.00781941561658298, 51.5253226555423], [-0.0080903401132746, 51.5238353110294], [-0.0216115686658594, 51.51657123087]]], [[[-0.0212678337033492, 51.537007401385], [-0.0180112178111926, 51.5322223572861], [-0.0136822637916931, 51.5298465466927], [-0.0210107899170071, 51.5279297040512], [-0.0227921068748026, 51.5303751829207], [-0.0298770848699528, 51.5294044188513], [-0.0349336805339942, 51.5366274667133], [-0.0407379137152159, 51.5381186562258], [-0.0374213185800631, 51.5412814848204], [-0.0331911146315964, 51.5446857163683], [-0.0289910688237788, 51.5422729755855], [-0.016549676137034, 51.543329866783], [-0.0212678337033492, 51.537007401385]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "Central (Walthamstow)", "borough": "Waltham Forest", "ward_count": 10, "wards": "Chapel End, Grove Green, High Street, Higham Hill, Hoe Street, Markhouse, St James, Upper Walthamstow, William Morris, Wood Street"}, "geometry": {"type": "MultiPolygon", "coordinates": [[[[-0.0111881864106584, 51.5645834039653], [-0.00827401276315558, 51.5698648476089], [-0.00535901897502318, 51.5688700509456], [0.00565909225713902, 51.5647729312275], [-0.00592885678052696, 51.5567046756221], [-0.0111881864106584, 51.5645834039653]]], [[[-0.0482040623811547, 51.5719040556739], [-0.0511449586418684, 51.5677293943477], [-0.0511470697400311, 51.5677302063412], [-0.0611585720665009, 51.5777860361975], [-0.0532005923039354, 51.5869327250794], [-0.0522889320835113, 51.5935410368686], [-0.041390716789704, 51.6056467844159], [-0.0339466520484612, 51.6095038598729], [-0.0203613658684825, 51.60288515128], [-0.0170883640784667, 51.6011509084434], [-0.010734614872449, 51.6004315042407], [-0.00326802030049683, 51.6003190157389], [0.0125469358387258, 51.5953635058787], [0.0125456902701729, 51.5953571434838], [0.0129671463596429, 51.5869620327693], [0.0149354845145147, 51.5833577453248], [-0.000375524376856004, 51.5813403985391], [-0.00593225035334587, 51.5789919492839], [-0.0128455398280916, 51.5753414916039], [-0.015512052400246, 51.576457565509], [-0.0279973547741849, 51.5730337226753], [-0.0482040623811547, 51.5719040556739]]]]}}, {"type": "Feature", "properties": {"neighbourhood": "North (Chingford)", "borough": "Waltham Forest", "ward_count": 6, "wards": "Chingford Green, Endlebury, Hale End & Highams Park South, Hatch Lane & Highams Park North, Larkswood, Valley"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.00326802030049683, 51.6003190157389], [-0.010734614872449, 51.6004315042407], [-0.0170883640784667, 51.6011509084434], [-0.0203613658684825, 51.60288515128], [-0.0339466520484612, 51.6095038598729], [-0.0353224501907725, 51.6129842497683], [-0.0259377705220752, 51.6217428218387], [-0.0240246173705617, 51.6246439645404], [-0.0233926028915014, 51.6252784380583], [-0.0168090819163363, 51.6335288973903], [-0.0147800744979147, 51.6367387862758], [-0.0122596870547121, 51.6462286962719], [0.00106727848739178, 51.6417623958517], [0.0227195416969588, 51.6411154928849], [0.0251592141335186, 51.6372893888204], [0.0252244065649691, 51.6352496012213], [0.021819035344359, 51.6288327861104], [0.0200877350284357, 51.6264287749617], [0.0145380924454833, 51.6188930894347], [0.00869444540428972, 51.6190699014527], [0.021250445433346, 51.6123074583878], [0.0195790134681853, 51.6076109417029], [0.0164189827493158, 51.6039305627401], [0.0125469358387258, 51.5953635058787], [-0.00326802030049683, 51.6003190157389]]]}}, {"type": "Feature", "properties": {"neighbourhood": "South (Leyton/Leytonstone)", "borough": "Waltham Forest", "ward_count": 6, "wards": "Cann Hall, Cathall, Forest, Lea Bridge, Leyton, Leytonstone"}, "geometry": {"type": "Polygon", "coordinates": [[[-0.00868625229743246, 51.549922890254], [-0.0108423820256557, 51.5526236900054], [-0.0171743352515583, 51.5515772837198], [-0.0171740512189124, 51.5516758944393], [-0.0300395889044704, 51.5613589106994], [-0.0451297085977058, 51.5617899453013], [-0.0511449586418684, 51.5677293943477], [-0.0482040623811547, 51.5719040556739], [-0.0279973547741849, 51.5730337226753], [-0.015512052400246, 51.576457565509], [-0.0128455398280916, 51.5753414916039], [-0.00593225035334587, 51.5789919492839], [-0.000375524376856004, 51.5813403985391], [0.0149354845145147, 51.5833577453248], [0.0164867288262751, 51.5728872338189], [0.0191310762333434, 51.5698548949449], [0.014308954583771, 51.5635078782028], [0.0204742041657707, 51.5561281250745], [0.0162807966979312, 51.5531927103866], [0.0146412934547694, 51.5549643727134], [0.00956876687641141, 51.5512469832366], [-0.000155843808584557, 51.5517314704798], [-0.00416104016302288, 51.5510339048465], [-0.00868625229743246, 51.549922890254]], [[-0.0111881864106584, 51.5645834039653], [-0.00592885678052696, 51.5567046756221], [0.00565909225713902, 51.5647729312275], [-0.00535901897502318, 51.5688700509456], [-0.00827401276315558, 51.5698648476089], [-0.0111881864106584, 51.5645834039653]]]}}]};
+
+// ============================================================
+// MAP SETUP
+// ============================================================
+const map = L.map('map', {
+  center: [51.545, 0.07],
+  zoom: 11,
+  zoomControl: true,
+});
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/">CARTO</a>',
+  maxZoom: 20,
+  subdomains: 'abcd',
+}).addTo(map);
+
+// ============================================================
+// MARKER ICONS
+// ============================================================
+function getColour(status) {
+  if (status === 'Live')           return '#2e7d32';
+  if (status === 'In Development') return '#e65100';
+  return '#880e4f';
+}
+
+function getBadgeClass(status) {
+  if (status === 'Live')           return 'status-live';
+  if (status === 'In Development') return 'status-dev';
+  return 'status-plan';
+}
+
+function createIcon(status) {
+  const color = getColour(status);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">
+    <path d="M14 0C6.3 0 0 6.3 0 14c0 10 14 22 14 22s14-12 14-22C28 6.3 21.7 0 14 0z" fill="${color}" stroke="white" stroke-width="2"/>
+    <circle cx="14" cy="14" r="6" fill="white"/>
+    <text x="14" y="18" text-anchor="middle" font-size="9" font-weight="bold" fill="${color}">H</text>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    iconSize: [28, 36],
+    iconAnchor: [14, 36],
+    popupAnchor: [0, -38],
+    className: '',
+  });
+}
+
+// ============================================================
+// BUILD MARKERS
+// ============================================================
+const buildingsLayer = L.layerGroup().addTo(map);
+const markersById = {};
+
+BUILDINGS.forEach((b, i) => {
+  const marker = L.marker([b.lat, b.lng], { icon: createIcon(b.status) });
+  marker.bindPopup(`
+    <div class="popup-header">
+      <div class="popup-ref">${b.ref} · ${b.borough}</div>
+      <div class="popup-title">${b.name}</div>
+    </div>
+    <div class="popup-body">
+      <div class="popup-row">
+        <span class="popup-label">Status</span>
+        <span class="popup-value"><span class="status-badge ${getBadgeClass(b.status)}">${b.status || 'TBC'}</span></span>
+      </div>
+      <div class="popup-row">
+        <span class="popup-label">Archetype</span>
+        <span class="popup-value">${b.nhcArchetype || 'TBC'}</span>
+      </div>
+      <div class="popup-row">
+        <span class="popup-label">Services in building</span>
+        <span class="popup-value">${b.services || 'TBC'}</span>
+      </div>
+      <div class="popup-row">
+        <span class="popup-label">Lease status</span>
+        <span class="popup-value">${b.leaseStatus || 'TBC'}</span>
+      </div>
+      <div class="popup-row">
+        <span class="popup-label">Utilisation</span>
+        <span class="popup-value">${b.utilisation || 'TBC'}</span>
+      </div>
+      <div class="popup-row" style="border-bottom:none">
+        <span class="popup-label">Design / risk</span>
+        <span class="popup-value">${b.designRisk || 'TBC'}</span>
+      </div>
+
+    </div>
+  `, { className: 'custom-popup', maxWidth: 360 });
+  marker.addTo(buildingsLayer);
+  markersById[b.ref] = marker;
+});
+
+// ============================================================
+// BUILD SIDEBAR BUILDING LIST
+// ============================================================
+const boroughOrder = ["Barking & Dagenham","Havering","Newham","Tower Hamlets","Hackney","Waltham Forest","Redbridge"];
+const byBorough = {};
+boroughOrder.forEach(b => byBorough[b] = []);
+BUILDINGS.forEach(b => byBorough[b.borough].push(b));
+
+const listEl = document.getElementById('building-list');
+boroughOrder.forEach(borough => {
+  if (!byBorough[borough] || byBorough[borough].length === 0) return;
+  const label = document.createElement('div');
+  label.className = 'borough-label';
+  label.style.borderLeft = `3px solid ${BOROUGH_COLOURS[borough]}`;
+  label.style.paddingLeft = '13px';
+  label.textContent = borough;
+  listEl.appendChild(label);
+  byBorough[borough].forEach(b => {
+    const item = document.createElement('div');
+    item.className = 'building-item';
+    item.id = 'list-' + b.ref;
+    item.innerHTML = `<div class="building-name">${b.name}</div><div class="building-meta">${b.ref} · ${b.archetype} · ${b.status}</div>`;
+    item.onclick = () => {
+      map.setView([b.lat, b.lng], 15);
+      markersById[b.ref].openPopup();
+      document.querySelectorAll('.building-item').forEach(el => el.classList.remove('active'));
+      item.classList.add('active');
+    };
+    listEl.appendChild(item);
+  });
+});
+
+// ============================================================
+// NEIGHBOURHOOD GEOJSON LAYER
+// ============================================================
+let neighbourhoodLayer = L.layerGroup().addTo(map);
+let neighbourhoodFeatureLayers = [];
+
+function getNeighbourhoodName(feature) {
+  return feature.properties.name || feature.properties.Name || feature.properties.neighbourhood || 'Unnamed';
+}
+
+function getNeighbourhoodBorough(feature) {
+  return feature.properties.borough || feature.properties.Borough || '';
+}
+
+function neighbourhoodStyle(feature, highlighted=false) {
+  const borough = getNeighbourhoodBorough(feature);
+  const color = BOROUGH_COLOURS[borough] || '#607D8B';
+
+  return {
+    color: color,
+    weight: highlighted ? 3 : 2,
+    opacity: highlighted ? 0.95 : 0.75,
+    fillColor: color,
+    fillOpacity: highlighted ? 0.20 : 0.09,
+    lineJoin: 'round'
+  };
+}
+
+function labelsShouldBePermanent() {
+  return false;
+}
+
+function bindNeighbourhoodTooltip(layer, name) {
+  layer.unbindTooltip();
+  layer.bindTooltip(`<strong>${name}</strong>`, {
+    className: 'neighbourhood-tooltip',
+    permanent: false,
+    direction: 'auto',
+    sticky: true,
+    opacity: 0.95
+  });
+}
+
+function polygonAreaAndCentroid(ring) {
+  // ring coordinates are [lng, lat]. This is a simple planar approximation,
+  // good enough for positioning labels within London neighbourhood polygons.
+  let twiceArea = 0;
+  let cx = 0;
+  let cy = 0;
+
+  for (let i = 0; i < ring.length - 1; i++) {
+    const x0 = ring[i][0], y0 = ring[i][1];
+    const x1 = ring[i + 1][0], y1 = ring[i + 1][1];
+    const cross = x0 * y1 - x1 * y0;
+    twiceArea += cross;
+    cx += (x0 + x1) * cross;
+    cy += (y0 + y1) * cross;
+  }
+
+  const area = twiceArea / 2;
+  if (Math.abs(area) < 1e-12) {
+    const sum = ring.reduce((acc, pt) => [acc[0] + pt[0], acc[1] + pt[1]], [0, 0]);
+    return { area: 0, lng: sum[0] / ring.length, lat: sum[1] / ring.length };
+  }
+
+  return {
+    area: Math.abs(area),
+    lng: cx / (6 * area),
+    lat: cy / (6 * area)
+  };
+}
+
+function labelLatLngForLargestPart(geometry) {
+  let candidateRings = [];
+
+  if (geometry.type === 'Polygon') {
+    candidateRings = [geometry.coordinates[0]];
+  } else if (geometry.type === 'MultiPolygon') {
+    candidateRings = geometry.coordinates.map(poly => poly[0]);
+  }
+
+  let best = null;
+  candidateRings.forEach(ring => {
+    const result = polygonAreaAndCentroid(ring);
+    if (!best || result.area > best.area) best = result;
+  });
+
+  return best ? [best.lat, best.lng] : null;
+}
+
+function updateNeighbourhoodLabels() { }
+
+function renderGeoJSON(geojson, fileName='embedded boundaries') {
+  neighbourhoodLayer.clearLayers();
+  neighbourhoodFeatureLayers = [];
+
+  const layer = L.geoJSON(geojson, {
+    style: (feature) => neighbourhoodStyle(feature, false),
+    onEachFeature: (feature, layer) => {
+      const name = getNeighbourhoodName(feature);
+      const borough = getNeighbourhoodBorough(feature);
+      const wardCount = feature.properties.ward_count ? `<br>${feature.properties.ward_count} wards` : '';
+
+      bindNeighbourhoodTooltip(layer, name);
+
+      layer.on({
+        mouseover: () => {
+          layer.setStyle(neighbourhoodStyle(feature, true));
+          if (!labelsShouldBePermanent()) layer.openTooltip();
+        },
+        mouseout: () => {
+          layer.setStyle(neighbourhoodStyle(feature, false));
+          if (!labelsShouldBePermanent()) layer.closeTooltip();
+        }
+      });
+
+      layer.bindPopup(`
+        <div style="font-size:13px">
+          <strong>${name}</strong><br>
+          <span style="color:#888">${borough}</span>${wardCount}
+          ${feature.properties.wards ? '<br><small style="color:#aaa">Wards: ' + feature.properties.wards + '</small>' : ''}
+        </div>
+      `);
+
+      const labelLatLng = labelLatLngForLargestPart(feature.geometry);
+      neighbourhoodFeatureLayers.push({ layer, name, labelLatLng });
+    }
+  });
+
+  layer.addTo(neighbourhoodLayer);
+
+  const status = document.getElementById('boundary-status');
+  const count = geojson.features ? geojson.features.length : 1;
+  status.textContent = `✓ Loaded ${count} neighbourhood${count !== 1 ? 's' : ''} from ${fileName}`;
+  status.style.display = 'block';
+
+  if (geojson.features && geojson.features.length > 0) {
+    map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+  }
+}
+
+function loadGeoJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    try {
+      const geojson = JSON.parse(e.target.result);
+      renderGeoJSON(geojson, file.name);
+    } catch(err) {
+      alert('Error loading GeoJSON: ' + err.message);
+    }
+  };
+
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+// Pre-load the fixed NEL neighbourhoods so the map works immediately.
+renderGeoJSON(DEFAULT_BOUNDARIES, 'fixed NEL neighbourhoods');
+
+// ============================================================
+// LAYER TOGGLES
+// ============================================================
+function toggleLayer(layer, visible) {
+  if (layer === 'buildings') {
+    if (visible) map.addLayer(buildingsLayer);
+    else map.removeLayer(buildingsLayer);
+  }
+  if (layer === 'neighbourhoods') {
+    if (visible) map.addLayer(neighbourhoodLayer);
+    else map.removeLayer(neighbourhoodLayer);
+  }
+}
+
+// ============================================================
+// SIDEBAR SECTION COLLAPSE
+// ============================================================
+function toggleSection(header) {
+  const content = header.nextElementSibling;
+  content.classList.toggle('hidden');
+  header.classList.toggle('collapsed');
+}
+
+// ============================================================
+// KEYBOARD: ESC closes popup
+// ============================================================
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') map.closePopup();
+});
+</script>
+</body>
+</html>
